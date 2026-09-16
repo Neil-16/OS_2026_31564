@@ -283,6 +283,7 @@ ifeq ($(LAB),util)
 	UPROGS += $U/_sixfive
 	UPROGS += $U/_find
 	UPROGS += $U/_memdump
+	UPROGS += $U/_uptime
 endif
 ifeq ($(LAB),syscall)
 	UEXTRA += user/exec.sh

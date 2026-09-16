@@ -3,6 +3,8 @@
 #include "kernel/types.h"
 #include "user/user.h"
 #include "kernel/fcntl.h"
+#include "kernel/stat.h"
+#include "kernel/fs.h"
 
 // Parsed command representation
 #define EXEC  1
@@ -12,6 +14,12 @@
 #define BACK  5
 
 #define MAXARGS 10
+
+#define CMDSIZE  100  // command buffer size
+#define HISTSIZE 50   // commands kept in the shell's history
+
+char *hist[HISTSIZE]; // remembered commands (malloc'ed)
+int histn;            // number of remembered commands
 
 struct cmd {
   int type;
@@ -131,22 +139,163 @@ runcmd(struct cmd *cmd)
   exit(0);
 }
 
+// Is the shell reading commands from the console (a device), or from
+// a file or pipe?  Only print the prompt for the former.
+int
+isconsole(void)
+{
+  struct stat st;
+
+  if (fstat(0, &st) < 0)
+    return 1;
+  // A pipe also reports T_DEVICE (with dev == 2); exclude it.
+  return st.type == T_DEVICE && st.dev != 2;
+}
+
+// Remember a command so that "history" can print it later.
+void
+addhist(char *s)
+{
+  char *p;
+  int i;
+
+  p = malloc(strlen(s) + 1);
+  if (p == 0)
+    return;
+  strcpy(p, s);
+  if (histn < HISTSIZE) {
+    hist[histn++] = p;
+  } else {
+    free(hist[0]);
+    for (i = 1; i < HISTSIZE; i++)
+      hist[i - 1] = hist[i];
+    hist[HISTSIZE - 1] = p;
+  }
+}
+
+// Print the remembered commands.
+void
+prhistory(void)
+{
+  int i;
+
+  for (i = 0; i < histn; i++)
+    printf("%d  %s\n", i, hist[i]);
+}
+
+// Complete the token that ends just before buf[at] (which holds a tab)
+// against the names in the current directory.  The tab is replaced by
+// the completion.  Returns 1 if a completion was inserted, 0 otherwise.
+int
+complete(char *buf, int at)
+{
+  char name[DIRSIZ + 1];
+  char common[DIRSIZ + 1];
+  char *t;
+  int fd, i, plen, ext, nmatches;
+  struct dirent de;
+
+  // locate the token being completed.
+  t = buf + at;
+  while (t > buf && t[-1] != ' ' && t[-1] != '\t')
+    t--;
+  plen = (buf + at) - t;
+  if (plen == 0 || plen > DIRSIZ)
+    return 0;
+
+  if ((fd = open(".", O_RDONLY)) < 0)
+    return 0;
+
+  // gather all matching names in the current directory.
+  nmatches = 0;
+  common[0] = 0;
+  while (read(fd, &de, sizeof(de)) == sizeof(de)) {
+    if (de.inum == 0)
+      continue;
+    memmove(name, de.name, DIRSIZ);
+    name[DIRSIZ] = 0;
+    if (strcmp(name, ".") == 0 || strcmp(name, "..") == 0)
+      continue;
+    for (i = 0; i < plen && name[i] == t[i]; i++)
+      ;
+    if (i != plen)
+      continue;
+    if (nmatches == 0) {
+      strcpy(common, name);
+    } else {
+      for (i = 0; common[i] != 0 && common[i] == name[i]; i++)
+        ;
+      common[i] = 0;
+    }
+    nmatches++;
+  }
+  close(fd);
+
+  if (nmatches == 0)
+    return 0;
+
+  // the extension is what the typed token is missing.
+  ext = strlen(common) - plen;
+  if (ext <= 0)
+    return 0;
+  if (strlen(buf) + ext + 1 > CMDSIZE)
+    return 0;
+
+  // slide the tail of the line right, then splice in the extension
+  // where the tab was.
+  memmove(buf + at + ext, buf + at + 1, strlen(buf + at + 1) + 1);
+  memmove(buf + at, common + plen, ext);
+  return 1;
+}
+
+// Expand all tabs in s by completing the word before each tab against
+// the current directory.  A tab with nothing to add is simply dropped.
+// Returns 1 if s contained a tab.
+int
+expandcmd(char *s)
+{
+  char *tab;
+  int had;
+
+  had = 0;
+  while ((tab = strchr(s, '\t')) != 0) {
+    had = 1;
+    if (complete(s, tab - s) != 0)
+      continue;
+    memmove(tab, tab + 1, strlen(tab));
+  }
+  return had;
+}
+
 int
 getcmd(char *buf, int nbuf)
 {
-  write(2, "$ ", 2);
+  char c;
+  int i, n;
+
+  if (isconsole())
+    write(2, "$ ", 2);
   memset(buf, 0, nbuf);
-  gets(buf, nbuf);
-  if (buf[0] == 0) // EOF
-    return -1;
+  i = 0;
+  for (;;) {
+    n = read(0, &c, 1);
+    if (n != 1) // EOF (e.g. ^D, or end of an input file)
+      return -1;
+    if (c == '\n' || c == '\r')
+      break;
+    if (i + 1 < nbuf)
+      buf[i++] = c;
+  }
+  buf[i] = 0;
   return 0;
 }
 
 int
 main(void)
 {
-  static char buf[100];
+  static char buf[CMDSIZE];
   int fd;
+  char *cmd, *t;
 
   // Ensure that three file descriptors are open.
   while ((fd = open("console", O_RDWR)) >= 0) {
@@ -158,14 +307,34 @@ main(void)
 
   // Read and run input commands.
   while (getcmd(buf, sizeof(buf)) >= 0) {
-    char *cmd = buf;
+    // Expand tabs (the completion key) before running the command.
+    if (expandcmd(buf)) {
+      // show the resulting, completed command.
+      write(2, buf, strlen(buf));
+      write(2, "\n", 1);
+    }
+
+    cmd = buf;
     while (*cmd == ' ' || *cmd == '\t')
       cmd++;
-    if (*cmd == '\n') // is a blank command
+    // drop any trailing whitespace.
+    t = cmd + strlen(cmd);
+    while (t > cmd && (t[-1] == ' ' || t[-1] == '\t' || t[-1] == '\n'))
+      t--;
+    *t = 0;
+    if (*cmd == 0) // is a blank command
       continue;
-    if (cmd[0] == 'c' && cmd[1] == 'd' && cmd[2] == ' ') {
+
+    addhist(cmd);
+
+    if (strcmp(cmd, "history") == 0) {
+      prhistory();
+    } else if (strcmp(cmd, "wait") == 0) {
+      // wait for all outstanding background children.
+      while (wait(0) >= 0)
+        ;
+    } else if (cmd[0] == 'c' && cmd[1] == 'd' && cmd[2] == ' ') {
       // Chdir must be called by the parent, not the child.
-      cmd[strlen(cmd) - 1] = 0; // chop \n
       if (chdir(cmd + 3) < 0)
         fprintf(2, "cannot cd %s\n", cmd + 3);
     } else {
