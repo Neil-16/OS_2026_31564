@@ -57,9 +57,88 @@ main(int argc, char *argv[])
   exit(0);
 }
 
+static uint16
+load16(char *data)
+{
+  return (uint16)(uchar)data[0] |
+         ((uint16)(uchar)data[1] << 8);
+}
+
+static uint32
+load32(char *data)
+{
+  return (uint32)(uchar)data[0] |
+         ((uint32)(uchar)data[1] << 8) |
+         ((uint32)(uchar)data[2] << 16) |
+         ((uint32)(uchar)data[3] << 24);
+}
+
+static uint64
+load64(char *data)
+{
+  uint64 value;
+  int i;
+
+  value = 0;
+  for (i = 0; i < 8; i++)
+    value |= (uint64)(uchar)data[i] << (8 * i);
+  return value;
+}
+
 void
 memdump(char *fmt, char *data, int len)
 {
-  // Your code here.  `data` holds `len` valid bytes.
+  int offset;
+  int remaining;
+  int i;
+  uint16 value16;
+  uint32 value32;
+  uint64 value64;
 
+  offset = 0;
+  for (i = 0; fmt[i] != 0; i++) {
+    remaining = len - offset;
+    if ((fmt[i] == 'i' && remaining < 4) ||
+        (fmt[i] == 'p' && remaining < 8) ||
+        (fmt[i] == 'h' && remaining < 2) ||
+        (fmt[i] == 'c' && remaining < 1) ||
+        (fmt[i] == 's' && remaining < 8)) {
+      printf("memdump: not enough data for '%c'\n", fmt[i]);
+      return;
+    }
+
+    switch (fmt[i]) {
+    case 'i':
+      value32 = load32(data + offset);
+      printf("%d\n", (int)value32);
+      offset += 4;
+      break;
+    case 'p':
+      value64 = load64(data + offset);
+      printf("%lx\n", value64);
+      offset += 8;
+      break;
+    case 'h':
+      value16 = load16(data + offset);
+      printf("%d\n", (int)(short)value16);
+      offset += 2;
+      break;
+    case 'c':
+      printf("%c\n", (uint32)(uchar)data[offset]);
+      offset++;
+      break;
+    case 's':
+      value64 = load64(data + offset);
+      printf("%s\n", (char *)value64);
+      offset += 8;
+      break;
+    case 'S':
+      while (offset < len && data[offset] != 0) {
+        printf("%c", (uint32)(uchar)data[offset]);
+        offset++;
+      }
+      printf("\n");
+      return;
+    }
+  }
 }

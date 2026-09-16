@@ -279,6 +279,9 @@ UEXTRA=
 ifeq ($(LAB),util)
 	UEXTRA += user/findtest.sh
 	UEXTRA += user/sixfive.txt
+	UPROGS += $U/_sleep
+	UPROGS += $U/_sixfive
+	UPROGS += $U/_find
 	UPROGS += $U/_memdump
 endif
 ifeq ($(LAB),syscall)
