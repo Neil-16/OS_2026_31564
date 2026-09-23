@@ -285,6 +285,7 @@ ifeq ($(LAB),syscall)
 	UPROGS += $U/_sbtest
 	UPROGS += $U/_secret
 	UPROGS += $U/_attack
+	UPROGS += $U/_freemem
 endif
 
 fs.img: mkfs/mkfs README $(UEXTRA) $(UPROGS)

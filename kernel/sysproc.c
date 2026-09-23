@@ -125,3 +125,10 @@ sys_interpose(void)
   }
   return 0;
 }
+
+// return the number of free bytes of physical memory.
+uint64
+sys_freemem(void)
+{
+  return kfreemem();
+}

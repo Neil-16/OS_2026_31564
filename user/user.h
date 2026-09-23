@@ -26,6 +26,7 @@ int pause(int);
 int uptime(void);
 int sync(void);
 int interpose(int mask, const char *path);
+uint64 freemem(void);
 
 // ulib.c
 int stat(const char *, struct stat *);
