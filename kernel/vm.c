@@ -230,7 +230,9 @@ uvmalloc(pagetable_t pagetable, uint64 oldsz, uint64 newsz, int xperm)
       uvmdealloc(pagetable, a, oldsz);
       return 0;
     }
+#ifndef LAB_SYSCALL
     memset(mem, 0, PGSIZE);
+#endif
     if (mappages(pagetable, a, PGSIZE, (uint64)mem, PTE_R | PTE_U | xperm) !=
         0) {
       kfree(mem);
@@ -469,7 +471,9 @@ vmfault(pagetable_t pagetable, uint64 psz, uint64 va, int read)
   mem = (uint64)kalloc();
   if (mem == 0)
     return 0;
+#ifndef LAB_SYSCALL
   memset((void *)mem, 0, PGSIZE);
+#endif
   if (mappages(pagetable, va, PGSIZE, mem, PTE_W | PTE_U | PTE_R) != 0) {
     kfree((void *)mem);
     return 0;

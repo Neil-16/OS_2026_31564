@@ -207,12 +207,6 @@ UPROGS=\
 
 
 
-ifeq ($(LAB),syscall)
-UPROGS += \
-	$U/_attack\
-	$U/_secret
-endif
-
 ifeq ($(LAB),traps)
 UPROGS += \
 	$U/_call\
@@ -287,6 +281,10 @@ ifeq ($(LAB),util)
 endif
 ifeq ($(LAB),syscall)
 	UEXTRA += user/exec.sh
+	UPROGS += $U/_sandbox
+	UPROGS += $U/_sbtest
+	UPROGS += $U/_secret
+	UPROGS += $U/_attack
 endif
 
 fs.img: mkfs/mkfs README $(UEXTRA) $(UPROGS)

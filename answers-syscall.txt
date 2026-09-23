@@ -1,0 +1,18 @@
+usertrap() called syscall()
+
+The value of p->trapframe->a7 is 15. 
+It represents the system-call number for SYS_open, so the process is making an open() system call.
+
+The CPU is currently in supervisor mode, because we're inside the kernel's syscall() function.
+The previous mode was user mode.
+
+After deliberately breaking syscall() with num = *(int *) 0:
+
+The kernel panics at this assembly instruction (kernel/kernel.asm, address 0x80001d58):
+    80001d58:  00002683   lw a3, 0(zero)
+i.e. "load word from address 0". It is a load page fault (scause=0xd, stval=0x0),
+which traps to kerneltrap() and panics with "panic: kerneltrap".
+
+The variable num corresponds to register a3 (x13): it is the destination register of
+the faulting lw a3,0(zero), and the rest of syscall() uses a3 as num.
+Because the load faults, the write never completes, so num is never really assigned.
