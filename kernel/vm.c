@@ -279,6 +279,46 @@ freewalk(pagetable_t pagetable)
   kfree((void *)pagetable);
 }
 
+// Print the page table, for the pgtbl lab.
+//
+// TODO(pgtbl lab): implement this.
+//
+// The first line is the pagetable argument itself.  Then print one
+// line per valid PTE, recursing into page-table pages, with a " .."
+// per level of depth.  Each line shows the virtual address, the raw
+// PTE, the physical address from PTE2PA, and the R/W/X/U permissions.
+// Skip PTEs that are not PTE_V.  A PTE is a leaf iff PTE_LEAF(pte) is
+// nonzero; otherwise it points at the next level down.  freewalk()
+// above is a good model for the recursion.  Use %p so the values print
+// as full 64-bit hex.
+void
+vmprint(pagetable_t pagetable)
+{
+  panic("vmprint not implemented");
+}
+
+// Return 1 if the kernel page table contains at least one superpage,
+// i.e. a valid leaf PTE at level 1 rather than a pointer to a
+// level-0 page table.
+//
+// The superpage support in kvmmap() that this checks for is part of
+// the pgtbl lab; this check is scaffolding and is already written.
+int
+ksuper(void)
+{
+  pagetable_t lvl1 = (pagetable_t)PTE2PA(kernel_pagetable[1]);
+
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = lvl1[i];
+    if ((pte & PTE_V) == 0)
+      continue;                          // not valid, skip
+    if ((pte & (PTE_R | PTE_W | PTE_X)) == 0)
+      continue;                          // points to level 0
+    return 1;                            // a leaf at level 1: superpage
+  }
+  return 0;
+}
+
 // Free user memory pages,
 // then free page-table pages.
 void

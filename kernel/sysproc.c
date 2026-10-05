@@ -110,3 +110,52 @@ sys_uptime(void)
   release(&tickslock);
   return xticks;
 }
+
+// Return the PTE for the given user virtual address, so that
+// user space can inspect its own page table.  Returns 0 if the
+// address has no PTE.
+uint64
+sys_pgpte(void)
+{
+  uint64 va;
+  pte_t *pte;
+
+  argaddr(0, &va);
+  if ((pte = walk(myproc()->pagetable, va, 0)) == 0)
+    return 0;
+  return *pte;
+}
+
+// Print this process's page table.  vmprint() in vm.c is part of
+// the lab; until it is written this does nothing.
+uint64
+sys_vmprint(void)
+{
+  vmprint(myproc()->pagetable);
+  return 0;
+}
+
+// TODO(pgtbl lab): implement pgaccess() here.
+//
+// Report which of the num pages starting at va have been accessed
+// since the last call, as a bitmask copied to the user buffer at
+// buf (first page in the least significant bit).  Return -1 for
+// invalid arguments, including a page that is not mapped.
+// Remember to clear PTE_A on each page you report, and to define
+// PTE_A in riscv.h.
+uint64
+sys_pgaccess(void)
+{
+  panic("sys_pgaccess not implemented");
+}
+
+// Return 1 if the kernel page table contains at least one superpage
+// (a 2MB leaf at level 1), 0 if it does not.
+//
+// Superpage support in kvmmap() is part of the pgtbl lab; the check
+// in ksuper() is scaffolding and is already written.
+uint64
+sys_ksuper(void)
+{
+  return ksuper();
+}

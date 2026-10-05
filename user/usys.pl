@@ -43,3 +43,7 @@ entry("sbrk");
 entry("pause");
 entry("uptime");
 entry("sync");
+entry("pgaccess");
+entry("pgpte");
+entry("vmprint");
+entry("ksuper");

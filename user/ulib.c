@@ -1,6 +1,7 @@
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "kernel/fcntl.h"
+#include "kernel/memlayout.h"
 #include "kernel/riscv.h"
 #include "kernel/vm.h"
 #include "user/user.h"
@@ -159,4 +160,17 @@ char *
 sbrklazy(int n)
 {
   return sys_sbrk(n, SBRK_LAZY);
+}
+
+// Read the pid out of the read-only page the kernel maps at USYSCALL,
+// instead of paying for a getpid() trap into the kernel.
+//
+// The USYSCALL mapping and the struct usyscall it points at are part
+// of the pgtbl lab; see kernel/memlayout.h.
+uint
+ugetpid(void)
+{
+  struct usyscall *usyscall;
+  usyscall = (struct usyscall *)USYSCALL;
+  return usyscall->pid;
 }

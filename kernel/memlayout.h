@@ -61,3 +61,14 @@
 //   TRAPFRAME (p->trapframe, used by the trampoline)
 //   TRAMPOLINE (the same page as in the kernel)
 #define TRAPFRAME (TRAMPOLINE - PGSIZE)
+
+// one page mapped read-only in every process at USYSCALL,
+// holding a struct usyscall. Lets user space read values
+// such as the pid without trapping into the kernel.
+#define USYSCALL (TRAPFRAME - PGSIZE)
+
+#ifndef __ASSEMBLER__
+struct usyscall {
+  int pid;  // process id of the owning process
+};
+#endif

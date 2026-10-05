@@ -140,6 +140,14 @@ found:
     return 0;
   }
 
+  // TODO(pgtbl lab): allocate a page to hold a struct usyscall
+  // initialized to this process's pid, and map it read-only for
+  // userspace at USYSCALL with permission bits that permit only
+  // reading (PTE_R | PTE_U -- no PTE_W, no PTE_X).  ugetpid() in
+  // user/ulib.c reads the pid from this page instead of trapping
+  // into the kernel.  Follow the trapframe handling above and
+  // below for the pattern.
+
   // Set up new context to start executing at forkret,
   // which returns to user space.
   memset(&p->context, 0, sizeof(p->context));
@@ -158,6 +166,8 @@ freeproc(struct proc *p)
   if (p->trapframe)
     kfree((void *)p->trapframe);
   p->trapframe = 0;
+  // TODO(pgtbl lab): unmap the USYSCALL page from p->pagetable and
+  // kfree the page that backs it, if you allocated one in allocproc.
   if (p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;

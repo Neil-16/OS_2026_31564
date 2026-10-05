@@ -21,3 +21,7 @@
 #define SYS_mkdir  20
 #define SYS_close  21
 #define SYS_sync   22
+#define SYS_pgaccess 23
+#define SYS_pgpte   24
+#define SYS_vmprint 25
+#define SYS_ksuper   26
