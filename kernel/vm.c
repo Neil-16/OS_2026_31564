@@ -58,7 +58,51 @@ kvmmake(void)
 void
 kvmmap(pagetable_t kpgtbl, uint64 va, uint64 pa, uint64 sz, int perm)
 {
-  if (mappages(kpgtbl, va, sz, pa, perm) != 0)
+  // Add superpages: map whole 2MB regions with a single level-1 PTE
+  // that is a leaf (has PTE_R/PTE_W/PTE_X set) instead of a pointer to
+  // a level-0 page table.
+  //
+  // We only do this when the mapping is 2MB aligned, at least one
+  // superpage long, and its level-1 slot is completely unused.  A
+  // region already claimed by a smaller mapping (UART0 and VIRTIO0
+  // share a 2MB region) is left to mappages(), because walk() and
+  // freewalk() distinguish a leaf from an interior pointer by
+  // permission bits and cannot tell them apart.
+  if (SUPERPGROUNDUP(va) == va && sz >= SUPERPGSIZE &&
+      (perm & (PTE_R | PTE_W | PTE_X)) != 0) {
+    // kvmmap() runs before paging is enabled, so walk() cannot
+    // allocate the level-1 table for us; do it by hand.
+    pte_t *lvl2 = &kpgtbl[PX(2, va)];
+    if ((*lvl2 & PTE_V) == 0) {
+      pagetable_t newlvl1 = (pagetable_t)kalloc();
+      if (newlvl1 == 0)
+        panic("kvmmap: kalloc lvl1");
+      memset(newlvl1, 0, PGSIZE);
+      *lvl2 = PA2PTE(newlvl1) | PTE_V;
+    }
+    pagetable_t lvl1 = (pagetable_t)PTE2PA(*lvl2);
+
+    uint64 start = va;
+    uint64 cur_pa = pa;
+
+    while (start + SUPERPGSIZE <= va + sz) {
+      if (lvl1[PX(1, start)] & PTE_V)
+        break;   // region already mapped; leave it to mappages()
+      lvl1[PX(1, start)] = PA2PTE(cur_pa) | perm | PTE_V;
+      start += SUPERPGSIZE;
+      cur_pa += SUPERPGSIZE;
+    }
+
+    if (start > va) {
+      sz -= start - va;   // size of the remainder
+      va = start;
+      pa = cur_pa;
+    }
+  }
+
+  // mappages() panics on size 0, and a mapping made entirely of
+  // superpages leaves nothing behind.
+  if (sz > 0 && mappages(kpgtbl, va, sz, pa, perm) != 0)
     panic("kvmmap");
 }
 
@@ -357,15 +401,26 @@ vmprint(pagetable_t pagetable)
 int
 ksuper(void)
 {
-  pagetable_t lvl1 = (pagetable_t)PTE2PA(kernel_pagetable[1]);
+  // Scan every level-1 table in the kernel page table rather than a
+  // fixed slot: superpages may live under any level-2 index, and
+  // kernel_pagetable[1] in particular is not where the device mappings
+  // are (UART0/VIRTIO0/PLIC sit under index 0).
+  for (int i2 = 0; i2 < 512; i2++) {
+    pte_t pte2 = kernel_pagetable[i2];
+    if ((pte2 & PTE_V) == 0)
+      continue;
+    if ((pte2 & (PTE_R | PTE_W | PTE_X)) != 0)
+      return 1;              // a leaf at level 2 is even bigger
 
-  for (int i = 0; i < 512; i++) {
-    pte_t pte = lvl1[i];
-    if ((pte & PTE_V) == 0)
-      continue;                          // not valid, skip
-    if ((pte & (PTE_R | PTE_W | PTE_X)) == 0)
-      continue;                          // points to level 0
-    return 1;                            // a leaf at level 1: superpage
+    pagetable_t lvl1 = (pagetable_t)PTE2PA(pte2);
+    for (int i1 = 0; i1 < 512; i1++) {
+      pte_t pte = lvl1[i1];
+      if ((pte & PTE_V) == 0)
+        continue;            // not valid, skip
+      if ((pte & (PTE_R | PTE_W | PTE_X)) == 0)
+        continue;            // points to level 0
+      return 1;              // a leaf at level 1: superpage
+    }
   }
   return 0;
 }
