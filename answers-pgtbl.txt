@@ -1,0 +1,47 @@
+First 10 pages — text, data, guard, stack:
+
+va	        perm	bits	what it is
+0	        5B	    V R X U A	text page 1, executable, already accessed 
+1000	    1B	    V R X U	text page 2, executable, A clear — never faulted on
+2000	    17	    V R W U	data/bss page, read-write user
+3000	    7	    V R W	stack guard is valid but no U, so user faults
+4000	    D7	    V R W U A D	first user stack page, read-write, accessed and dirty
+5000–9000	0	—	unmapped, past the end of p->sz
+
+Last 10 pages:
+
+va	                    perm	bits        what it is
+3FFFFF6000–3FFFFFD000	0	    unmapped stack region, kernel stacks and their guard pages
+3FFFFFE000	            C7	    V R W A D — TRAPFRAME, kernel-only, no U
+3FFFFFF000	            4B	    V R X A — TRAMPOLINE, kernel-only, no U
+
+q2
+Each leaf in the vmprint output corresponds exactly to one row from print_pgtbl, 
+because both are reading the same PTE; vmprint just also shows the two intermediate pointer PTEs that pgpte hides. 
+At VA 0x0 is the first text page, mapped read-execute-user (RXU) with the accessed bit (A) set, 
+since the program counter has passed through it; it permits instruction fetch and data reads but forbids writes, 
+so the process cannot modify its own code. VA 0x1000 is the second text page, also RXU, but with A clear, 
+meaning the hardware page walker has not yet resolved it through the TLB, so it has not been read or executed. 
+VA 0x2000 holds .data and .bss, mapped RWU with no execute bit — writable by the program but not runnable as instructions. 
+VA 0x3000 is the stack guard page: it is valid and marked RW, but crucially lacks PTE_U, 
+because uvmclear does *pte &= ~PTE_U rather than invalidating the PTE, 
+so any user-mode access to it raises a page fault while the kernel retains access. 
+VA 0x4000 is the base of the user stack, mapped RWU with both A and D set, recording that it has been both accessed and written. 
+At the top of the address space, VA 0x3fffffe000 is TRAPFRAME, mapped RW with A and D set and no PTE_U, 
+so the trampoline can save and restore registers but user code cannot forge one; 
+VA 0x3ffffff000 is TRAMPOLINE, mapped RX with A set and no PTE_U, 
+letting a trap jump to uservec while preventing user code from executing it directly. 
+Note that physical addresses are not consecutive (0x87f22000 then 0x87f1f000) because kalloc returns pages from a LIFO free list, 
+and that 0x3000 shows up in print_pgtbl as perm 7 and 0x3fffffe000 as 0xc7;
+the same values vmprint renders as the truncated RW and RW strings.
+
+q3
+SYS_uptime, while not a per-process constant, but it's a global one, and it changes only on timer interrupts. 
+we could refresh the shared page in the timer interrupt path and let user space read a slightly stale value. 
+
+q4
+As PLIC is mapped 0x4000000 bytes (kernel/vm.c:36) = 64MB, and it's 2MB-aligned, so:
+64MB / 2MB = 32 superpages
+
+Each superpage covers 2MB = 512 × 4KB, so it replaces 512 level-0 PTEs:
+32 superpages × 512 level-0 PTEs each = 16,384
