@@ -87,8 +87,10 @@ pgaccess_test(void)
     ok = 0;
   }
 
-  // an unmapped page is an error
-  if (pgaccess((char *)(MAXVA - 3 * PGSIZE), 1, (char *)&bits) == 0) {
+  // An unmapped page is an error.  We cannot use the top of the address
+  // space for this: USYSCALL/TRAPFRAME/TRAMPOLINE now occupy the last
+  // three pages.  0x80000 is well past anything exec maps.
+  if (pgaccess((char *)0x80000, 1, (char *)&bits) == 0) {
     printf("pgaccess: expected error for unmapped page\n");
     ok = 0;
   }

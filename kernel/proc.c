@@ -140,13 +140,15 @@ found:
     return 0;
   }
 
-  // TODO(pgtbl lab): allocate a page to hold a struct usyscall
-  // initialized to this process's pid, and map it read-only for
-  // userspace at USYSCALL with permission bits that permit only
-  // reading (PTE_R | PTE_U -- no PTE_W, no PTE_X).  ugetpid() in
-  // user/ulib.c reads the pid from this page instead of trapping
-  // into the kernel.  Follow the trapframe handling above and
-  // below for the pattern.
+  // Allocate the page that holds this process's struct usyscall.
+  // The mapping itself is made in proc_pagetable(), because exec()
+  // builds a brand new page table there and would otherwise drop it.
+  if ((p->usyscall = (struct usyscall *)kalloc()) == 0) {
+    freeproc(p);
+    release(&p->lock);
+    return 0;
+  }
+  p->usyscall->pid = p->pid;
 
   // Set up new context to start executing at forkret,
   // which returns to user space.
@@ -166,8 +168,12 @@ freeproc(struct proc *p)
   if (p->trapframe)
     kfree((void *)p->trapframe);
   p->trapframe = 0;
-  // TODO(pgtbl lab): unmap the USYSCALL page from p->pagetable and
-  // kfree the page that backs it, if you allocated one in allocproc.
+  // Free the page backing USYSCALL.  The unmapping itself happens in
+  // proc_freepagetable(), which is on the exec() teardown path too.
+  if (p->usyscall) {
+    kfree((void *)p->usyscall);
+    p->usyscall = 0;
+  }
   if (p->pagetable)
     proc_freepagetable(p->pagetable, p->sz);
   p->pagetable = 0;
@@ -211,6 +217,18 @@ proc_pagetable(struct proc *p)
     return 0;
   }
 
+  // map the struct usyscall page just below the trapframe page, for
+  // ugetpid() to read the pid without trapping into the kernel.
+  // read-only for the user: PTE_R | PTE_U, deliberately no PTE_W and
+  // no PTE_X.
+  if (mappages(pagetable, USYSCALL, PGSIZE, (uint64)(p->usyscall),
+               PTE_R | PTE_U) < 0) {
+    uvmunmap(pagetable, TRAPFRAME, 1, 0);
+    uvmunmap(pagetable, TRAMPOLINE, 1, 0);
+    uvmfree(pagetable, 0);
+    return 0;
+  }
+
   return pagetable;
 }
 
@@ -221,6 +239,12 @@ proc_freepagetable(pagetable_t pagetable, uint64 sz)
 {
   uvmunmap(pagetable, TRAMPOLINE, 1, 0);
   uvmunmap(pagetable, TRAPFRAME, 1, 0);
+  // Unmap USYSCALL too.  exec() tears down the old page table through
+  // this function rather than through freeproc(), so this is the only
+  // place that covers every teardown path.  Leaving the leaf PTE behind
+  // makes freewalk() panic.  do_free is 0: freeproc() owns freeing the
+  // page itself, since only it knows the address.
+  uvmunmap(pagetable, USYSCALL, 1, 0);
   uvmfree(pagetable, sz);
 }
 
