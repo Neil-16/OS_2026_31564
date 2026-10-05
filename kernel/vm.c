@@ -291,10 +291,61 @@ freewalk(pagetable_t pagetable)
 // nonzero; otherwise it points at the next level down.  freewalk()
 // above is a good model for the recursion.  Use %p so the values print
 // as full 64-bit hex.
+// Print the page table, for the pgtbl lab.
+//
+// The first line is the pagetable argument itself.  Then print one
+// line per valid PTE, recursing into page-table pages, with a " .."
+// per level of depth.  Each line shows the virtual address, the raw
+// PTE, the physical address from PTE2PA, and the R/W/X/U permissions.
+// Skip PTEs that are not PTE_V.  A PTE is a leaf iff PTE_LEAF(pte) is
+// nonzero; otherwise it points at the next level down.  freewalk()
+// above is a good model for the recursion.  Use %p so the values print
+// as full 64-bit hex.
+static void
+vmprint_level(pagetable_t pagetable, int level, uint64 va)
+{
+  for (int i = 0; i < 512; i++) {
+    pte_t pte = pagetable[i];
+    if ((pte & PTE_V) == 0)
+      continue;
+
+    // this index contributes the corresponding bits of the va
+    uint64 uva = va | ((uint64)i << PXSHIFT(level));
+
+    // one " .." per level above this one: the root is level 2, so its
+    // entries are indented once and level-0 leaves three times.
+    for (int depth = 0; depth < 3 - level; depth++)
+      printk(" ..");
+
+    printk("%p: pte %p pa %p", (void *)uva, (void *)pte, (void *)PTE2PA(pte));
+
+    if (PTE_LEAF(pte)) {
+      // permissions only make sense for a leaf
+      printk(" ");
+      if (pte & PTE_R)
+        printk("R");
+      if (pte & PTE_W)
+        printk("W");
+      if (pte & PTE_X)
+        printk("X");
+      if (pte & PTE_U)
+        printk("U");
+      if (level == 1)
+        printk(" superpage");
+      printk("\n");
+    } else {
+      // not a leaf, so this PTE points at the next level down
+      printk("\n");
+      vmprint_level((pagetable_t)PTE2PA(pte), level - 1, uva);
+    }
+  }
+}
+
 void
 vmprint(pagetable_t pagetable)
 {
-  panic("vmprint not implemented");
+  printk("page table %p\n", pagetable);
+  vmprint_level(pagetable, 2, 0);
 }
 
 // Return 1 if the kernel page table contains at least one superpage,
