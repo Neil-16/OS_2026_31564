@@ -135,18 +135,64 @@ sys_vmprint(void)
   return 0;
 }
 
-// TODO(pgtbl lab): implement pgaccess() here.
-//
 // Report which of the num pages starting at va have been accessed
 // since the last call, as a bitmask copied to the user buffer at
 // buf (first page in the least significant bit).  Return -1 for
 // invalid arguments, including a page that is not mapped.
-// Remember to clear PTE_A on each page you report, and to define
-// PTE_A in riscv.h.
+//
+// The hardware sets PTE_A in a PTE whenever the page walker has to
+// resolve a TLB miss for that page, so it records access since we last
+// cleared it.  We must clear it as we report it, or the bit stays set
+// forever and every later call looks identical.
 uint64
 sys_pgaccess(void)
 {
-  panic("sys_pgaccess not implemented");
+  uint64 va, bitmask = 0;
+  uint64 buf;
+  int num;
+  pagetable_t pagetable = myproc()->pagetable;
+
+  argaddr(0, &va);
+  argint(1, &num);
+  argaddr(2, &buf);
+
+  if (num < 0)
+    return -1;
+
+  // va must be page-aligned: the bitmask describes whole pages.
+  if (va % PGSIZE != 0)
+    return -1;
+
+  // the range must stay inside the user address space and not wrap.
+  if (va >= MAXVA || va + (uint64)num * PGSIZE > MAXVA)
+    return -1;
+
+  // the bitmask of num pages needs ceil(num/8) bytes; check the whole
+  // write is within the user space so copyout cannot write a kernel page.
+  if (buf >= MAXVA || buf + ((num + 7) / 8) > MAXVA)
+    return -1;
+
+  for (int i = 0; i < num; i++) {
+    pte_t *pte = walk(pagetable, va + (uint64)i * PGSIZE, 0);
+
+    // no page table entry at all, or an entry that isn't valid:
+    // this page isn't mapped.
+    if (pte == 0)
+      return -1;
+    if ((*pte & PTE_V) == 0)
+      return -1;
+
+    if (*pte & PTE_A) {
+      bitmask |= 1L << i;
+      *pte &= ~PTE_A;
+    }
+  }
+
+  if (copyout(pagetable, myproc()->sz, buf, (char *)&bitmask,
+              (num + 7) / 8) != 0)
+    return -1;
+
+  return 0;
 }
 
 // Return 1 if the kernel page table contains at least one superpage
