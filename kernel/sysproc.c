@@ -70,6 +70,8 @@ sys_pause(void)
   int n;
   uint ticks0;
 
+  backtrace();
+
   argint(0, &n);
   if (n < 0)
     n = 0;
@@ -109,4 +111,43 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+// Arrange for the process's alarm handler to be called every
+// `interval` ticks of CPU time.  interval == 0 disables the alarm.
+uint64
+sys_sigalarm(void)
+{
+  int interval;
+  uint64 handler;
+  struct proc *p = myproc();
+
+  argint(0, &interval);
+  if (interval < 0)
+    return -1;
+  argaddr(1, &handler);
+
+  p->alarm_interval = interval;
+  p->alarm_handler = handler;
+  p->alarm_ticks = 0;
+
+  return 0;
+}
+
+// Called by the alarm handler when it is done.  Restore the user
+// registers saved when the alarm fired, so the interrupted code
+// resumes exactly where it left off.
+uint64
+sys_sigreturn(void)
+{
+  struct proc *p = myproc();
+
+  memmove(p->trapframe, &p->alarm_tf, sizeof(struct trapframe));
+  p->alarm_active = 0;
+  p->alarm_ticks = 0;
+
+  // syscall() stores our return value in p->trapframe->a0, so return
+  // the a0 we just restored instead of 0; otherwise the interrupted
+  // code would see a clobbered a0.
+  return p->trapframe->a0;
 }

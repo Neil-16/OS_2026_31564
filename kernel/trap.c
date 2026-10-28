@@ -78,6 +78,21 @@ usertrap(void)
     setkilled(p);
   }
 
+  // A timer interrupt counts toward this process's alarm interval.
+  // Only arm the handler when no handler is already running, so that
+  // a slow handler cannot be re-entered.
+  if (which_dev == 2 && p->alarm_interval > 0 && !p->alarm_active) {
+    if (++p->alarm_ticks >= p->alarm_interval) {
+      p->alarm_ticks = 0;
+      p->alarm_active = 1;
+      // remember where the user program was and what its registers
+      // held, so sigreturn() can resume it undisturbed.
+      memmove(&p->alarm_tf, p->trapframe, sizeof(struct trapframe));
+      // returning to user space will start executing the handler.
+      p->trapframe->epc = p->alarm_handler;
+    }
+  }
+
   if (killed(p))
     kexit(-1);
 

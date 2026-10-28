@@ -140,6 +140,7 @@ panic(char *s)
   panicking = 1;
   printk("panic: ");
   printk("%s\n", s);
+  backtrace();
   panicked = 1; // freeze uart output from other CPUs
   for (;;)
     ;
@@ -149,4 +150,40 @@ void
 printkinit(void)
 {
   initlock(&pr.lock, "pr");
+}
+
+// Print a backtrace: the chain of saved return addresses on the
+// current kernel stack.
+//
+// Each frame looks like this, with the frame pointer s0 (fp) pointing
+// just past the saved return address:
+//
+//     fp - 16: saved fp of the caller
+//     fp -  8: return address into the caller
+//
+// The stack grows down, so callers have larger frame pointers.  A
+// kernel stack is a single page, and every frame of one call chain
+// lives in that page.  The outermost frame's saved frame pointer is
+// the top of that page, so stop when fp reaches the top (or leaves
+// the page).  That also stops us before following the stray frame
+// pointer beyond usertrap().
+void
+backtrace(void)
+{
+  uint64 fp = r_fp();
+  uint64 stack_page = PGROUNDDOWN(fp);
+
+  printk("backtrace:\n");
+  while (fp >= stack_page + 16 && fp < stack_page + PGSIZE) {
+    uint64 ra = *(uint64 *)(fp - 8);
+    uint64 next = *(uint64 *)(fp - 16);
+
+    printk("%p\n", (void *)ra);
+
+    // A caller's frame is always higher up the stack; anything else
+    // means we have reached the outermost frame.
+    if (next <= fp)
+      break;
+    fp = next;
+  }
 }

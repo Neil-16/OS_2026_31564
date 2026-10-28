@@ -1,0 +1,54 @@
+1. Which registers contain arguments to functions? For example, which
+   register holds 13 in main's call to printf?
+
+   The integer/pointer arguments are passed in a0 through a7 (floating
+   point arguments in fa0 through fa7).  In main's call to printf,
+   13 is held in a2 (main does "li a2,13" before the call).
+
+2. Where is the call to function f in the assembly code for main?  Where
+   is the call to g?  (Hint: the compiler may inline functions.)
+
+   Neither call appears: gcc inlined both f and g into main.  main
+   computes f(8)+1 at compile time and simply loads the result with
+   "li a1,12" (user/call.asm at main+0x8), so there is no jal to f
+   or to g.
+
+3. At what address is the function printf located?
+
+   0x70e.  main's call is "30: jal 70e <printf>" in user/call.asm.
+
+4. What value is in the register ra just after the jal to printf in
+   main?
+
+   0x34, i.e. the address of the instruction right after the jal
+   (li a0,0).  The jal at 0x30 stores its own address plus 4 into ra.
+
+5. Run the following code:
+
+       unsigned int i = 0x00646c72;
+       printf("H%x Wo%s", 57616, &i);
+
+   What is the output?
+
+   He110 World
+
+   57616 is 0xe110, so %x prints "e110".  xv6/RISC-V is little-endian,
+   so the bytes of i in memory are 0x72 0x6c 0x64 0x00, i.e. "rld",
+   and %s prints "rld" up to the NUL byte.  Hence "H" + "e110" + " Wo"
+   + "rld" = "He110 World".
+
+   If the RISC-V were big-endian instead, i would have to be
+   0x726c6400 so that the bytes in memory are still 'r','l','d','\0'.
+   57616 would not have to change: %x prints the value of the integer,
+   not its in-memory byte order.
+
+6. In the following code, what is going to be printed after 'y='?
+
+       printf("x=%d y=%d", 3);
+
+   x=3 y=<garbage>
+
+   printf's format string says to print two integers but the call only
+   passes one, so the second %d reads whatever happens to be in the
+   next argument register (a2).  It is not set by this call, so the
+   value is unpredictable; x=3 is printed correctly.

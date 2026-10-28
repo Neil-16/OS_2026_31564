@@ -146,6 +146,13 @@ found:
   p->context.ra = (uint64)forkret;
   p->context.sp = p->kstack + PGSIZE;
 
+  // no alarm until the process calls sigalarm()
+  p->alarm_interval = 0;
+  p->alarm_ticks = 0;
+  p->alarm_active = 0;
+  p->alarm_handler = 0;
+  memset(&p->alarm_tf, 0, sizeof(p->alarm_tf));
+
   return p;
 }
 
@@ -167,6 +174,10 @@ freeproc(struct proc *p)
   p->chan = 0;
   p->killed = 0;
   p->xstate = 0;
+  p->alarm_interval = 0;
+  p->alarm_ticks = 0;
+  p->alarm_active = 0;
+  p->alarm_handler = 0;
   p->state = UNUSED;
 }
 
